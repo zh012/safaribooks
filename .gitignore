@@ -4,3 +4,5 @@ cookies.json
 *.log
 
 .vscode
+
+.DS_Store
