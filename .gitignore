@@ -2,3 +2,5 @@ Books/
 
 cookies.json
 *.log
+
+.vscode
