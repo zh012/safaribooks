@@ -99,5 +99,3 @@ if __name__ == '__main__':
             os.remove(json_file)
         except Exception as e:
             pass
-
-        break
