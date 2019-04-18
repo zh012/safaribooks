@@ -14,10 +14,10 @@ def get_course(toc, fallback_title):
     return title, soup
 
 def get_lessons(soup):
-    return [('{}. {}'.format(ind + 1, l.a.text.strip()), l) for ind, l in enumerate(soup.find_all('li', class_='toc-level-1'))]
+    return [('{}. {}'.format(ind + 1, l.a.text.strip()).replace("'", "`"), l) for ind, l in enumerate(soup.find_all('li', class_='toc-level-1'))]
 
 def get_videos(lesson):
-    return [('{}. {}'.format(ind + 1, a.text.strip()), a.get('href')) for ind, a in enumerate(lesson.ol.find_all('a'))]
+    return [('{}. {}'.format(ind + 1, a.text.strip()).replace("'", "`"), a.get('href')) for ind, a in enumerate(lesson.ol.find_all('a'))]
 
 def iter_videos(course_soup):
     for l_name, l_soup in get_lessons(course_soup):
@@ -99,3 +99,5 @@ if __name__ == '__main__':
             os.remove(json_file)
         except Exception as e:
             pass
+
+        break
