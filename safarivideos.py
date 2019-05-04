@@ -24,8 +24,15 @@ def iter_videos(course_soup):
         for v_name, v_url in get_videos(l_soup):
             yield l_name, v_name, v_url
 
-def download_command(url, output, username=None, password=None):
-    cmd = "youtube-dl -v --output '{}' --write-info-json --write-sub --convert-subs srt -f 'bestvideo[height<=480]+bestaudio/best[height<=480]' {}".format(output, url)
+def download_command(url, output, username=None, password=None, fmt=None):
+    if fmt is None:
+        fmt_arg = "-f 'bestvideo[height<=480]+bestaudio/best[height<=480]'"
+    elif fmt:
+        fmt_arg = "-f " + fmt
+    else:
+        fmt_arg = ''
+
+    cmd = "youtube-dl -v --output '{}' --write-info-json --write-sub --convert-subs srt {} {}".format(output, fmt_arg, url)
     if username:
         cmd += " -u {}".format(username)
     if password:
@@ -35,7 +42,7 @@ def download_command(url, output, username=None, password=None):
 def resume_command(json_file, output):
     return "youtube-dl -v --output '{}' --load-info-json '{}'".format(output, json_file)
 
-def iter_commands(toc, default_title, root_path):
+def iter_commands(toc, default_title, root_path, fmt):
     c_name, c_soup = get_course(toc, default_title)
 
     for l_name, v_name, v_url in iter_videos(c_soup):
@@ -43,7 +50,7 @@ def iter_commands(toc, default_title, root_path):
         output = os.path.join(folder, v_name + '.mp4')
         json_file = os.path.join(folder, v_name + '.info.json')
         resume_cmd = resume_command(json_file, output)
-        download_cmd = download_command(v_url, output)
+        download_cmd = download_command(v_url, output, fmt=fmt)
         yield folder, output, json_file, resume_cmd, download_cmd
 
 
@@ -56,14 +63,14 @@ if __name__ == '__main__':
         print('''safarivideos.py --login <username:password> -cookies <cookies file> --prefix <root path> <video url>''')
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'l:c:p:', ['login=', 'cookies=', 'prefix='])
+        opts, args = getopt.getopt(sys.argv[1:], 'l:c:p:f:', ['login=', 'cookies=', 'prefix=', 'format=', 'dryrun'])
     except getopt.GetoptError:
         print_usage()
         sys.exit(2)
 
     url = args[0]
 
-    username, password, cookies_file, prefix = None, None, None, None
+    username, password, cookies_file, prefix, fmt, dryrun = None, None, None, None, None, False
 
     for opt, arg in opts:
         if opt in ("-l", "--login"):
@@ -72,6 +79,12 @@ if __name__ == '__main__':
             cookies_file = arg
         elif opt in ("-p", "--prefix"):
             prefix = arg
+        elif opt in ("-f", "--format"):
+            fmt = arg.strip()
+            if fmt.lower() == 'best':
+                fmt = ''
+        elif opt in ("--dryrun"):
+            dryrun = True
 
     if cookies_file is None and username is None:
         username, password = filter(None, open(os.path.expanduser('~/.safaribooks'), 'r').read().split())
@@ -81,7 +94,7 @@ if __name__ == '__main__':
 
     toc = requests.get(url).text
 
-    for folder, output, json_file, resume_cmd, download_cmd in iter_commands(toc, title_from_url(url), prefix):
+    for folder, output, json_file, resume_cmd, download_cmd in iter_commands(toc, title_from_url(url), prefix, fmt):
         os.makedirs(folder, exist_ok=True)
 
         if os.path.exists(output):
@@ -94,7 +107,10 @@ if __name__ == '__main__':
                 cmd = '{} --cookies {}'.format(download_cmd, cookies_file)
             else:
                 cmd = '{} -u {} -p {}'.format(download_cmd, username, password)
-            subprocess.call(cmd, shell=True)
+            if dryrun:
+                print(cmd + '\n')
+            else:
+                subprocess.call(cmd, shell=True)
         try:
             os.remove(json_file)
         except Exception as e:
