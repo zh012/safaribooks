@@ -4,4 +4,4 @@ cookies.json
 *.log
 .vscode
 .DS_Store
-down.sh
+.local
