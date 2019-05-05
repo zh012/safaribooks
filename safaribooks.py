@@ -277,12 +277,11 @@ class SafariBooks:
 
         if not args.cred:
             if not os.path.isfile(COOKIES_FILE):
-                self.display.exit("Login: unable to find cookies file.\n"
-                                  "    Please use the --cred option to perform the login.")
+                args.cred = list(filter(None, open(os.path.expanduser('~/.safaribooks'), 'r').read().split()))
+            else:
+                self.cookies = json.load(open(COOKIES_FILE))
 
-            self.cookies = json.load(open(COOKIES_FILE))
-
-        else:
+        if args.cred:
             self.display.info("Logging into Safari Books Online...", state=True)
             self.do_login(*args.cred)
             if not args.no_cookies:
@@ -361,6 +360,14 @@ class SafariBooks:
 
         if not self.display.in_error and not args.log:
             os.remove(self.display.log_file)
+
+        shutil.copy(
+            os.path.join(self.BOOK_PATH, self.book_id) + ".epub",
+            os.path.join(books_dir, self.clean_book_title + '.epub')
+        )
+
+        if args.clean:
+            shutil.rmtree(self.BOOK_PATH)
 
         sys.exit(0)
 
@@ -1009,7 +1016,9 @@ if __name__ == "__main__":
         help="Book digits ID that you want to download. You can find it in the URL (X-es):"
              " `" + SAFARI_BASE_URL + "/library/view/book-name/XXXXXXXXXXXXX/`"
     )
-
+    arguments.add_argument(
+        "--clean", dest="clean", action='store_true', help="Clean up the downloaded contents"
+    )
     args_parsed = arguments.parse_args()
 
     if args_parsed.cred:

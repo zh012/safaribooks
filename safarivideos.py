@@ -90,7 +90,7 @@ if __name__ == '__main__':
         username, password = filter(None, open(os.path.expanduser('~/.safaribooks'), 'r').read().split())
 
     if prefix is None:
-        prefix = 'Books'
+        prefix = 'Videos'
 
     toc = requests.get(url).text
 
