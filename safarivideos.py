@@ -26,7 +26,7 @@ def iter_videos(course_soup):
 
 def download_command(url, output, username=None, password=None, fmt=None):
     if fmt is None:
-        fmt_arg = "-f 'bestvideo[height<=480]+bestaudio/best[height<=480]'"
+        fmt_arg = "-f 'worstvideo[height=720]'"
     elif fmt:
         fmt_arg = "-f " + fmt
     else:
