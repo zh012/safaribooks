@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
+#!/usr/bin/env python3
+# coding: utf-8
 import os
 import sys
 import json
@@ -18,8 +20,14 @@ from urllib.parse import urljoin, urlsplit, urlparse
 PATH = os.path.dirname(os.path.realpath(__file__))
 COOKIES_FILE = os.path.join(PATH, "cookies.json")
 
-SAFARI_BASE_HOST = "learning.oreilly.com"
+ORLY_BASE_HOST = "oreilly.com"  # PLEASE INSERT URL HERE
+
+SAFARI_BASE_HOST = "learning." + ORLY_BASE_HOST
+API_ORIGIN_HOST = "api." + ORLY_BASE_HOST
+
+ORLY_BASE_URL = "https://www." + ORLY_BASE_HOST
 SAFARI_BASE_URL = "https://" + SAFARI_BASE_HOST
+API_ORIGIN_URL = "https://" + API_ORIGIN_HOST
 
 
 class Display:
@@ -64,7 +72,11 @@ class Display:
         self.logger.info(str(message))  # TODO: "utf-8", "replace"
 
     def out(self, put):
-        sys.stdout.write("\r" + " " * self.columns + "\r" + str(put) + "\n")  # TODO: "utf-8", "replace"
+        try:
+            put = str(put, "utf-8", "replace")
+        except:
+            put = str(put)
+        sys.stdout.write("\r" + " " * self.columns + "\r" + put + "\n")
 
     def info(self, message, state=False):
         self.log(message)
@@ -181,8 +193,9 @@ class WinQueue(list):  # TODO: error while use `process` in Windows: can't pickl
 
 
 class SafariBooks:
+    LOGIN_URL = ORLY_BASE_URL + "/member/auth/login/"
+    LOGIN_ENTRY_URL = SAFARI_BASE_URL + "/login/unified/?next=/home/"
 
-    LOGIN_URL = SAFARI_BASE_URL + "/accounts/login/"
     API_TEMPLATE = SAFARI_BASE_URL + "/api/v1/book/{0}/"
 
     HEADERS = {
@@ -193,7 +206,7 @@ class SafariBooks:
         "cookie": "",
         "pragma": "no-cache",
         "origin": SAFARI_BASE_URL,
-        "referer": LOGIN_URL,
+        "referer": LOGIN_ENTRY_URL,
         "upgrade-insecure-requests": "1",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/60.0.3112.113 Safari/537.36"
@@ -274,6 +287,7 @@ class SafariBooks:
         self.display.intro()
 
         self.cookies = {}
+        self.jwt = {}
 
         if not args.cred:
             if not os.path.isfile(COOKIES_FILE):
@@ -375,7 +389,7 @@ class SafariBooks:
         return " ".join(["{0}={1};".format(k, v) for k, v in self.cookies.items()])
 
     def return_headers(self, url):
-        if SAFARI_BASE_HOST in urlsplit(url).netloc:
+        if ORLY_BASE_HOST in urlsplit(url).netloc:
             self.HEADERS["cookie"] = self.return_cookies()
 
         else:
@@ -389,12 +403,15 @@ class SafariBooks:
                 cookie.name: cookie.value
             })
 
-    def requests_provider(self, url, post=False, data=None, update_cookies=True, **kwargs):
+    def requests_provider(
+            self, url, post=False, data=None, perfom_redirect=True, update_cookies=True, update_referer=True, **kwargs
+    ):
         try:
             response = getattr(requests, "post" if post else "get")(
                 url,
                 headers=self.return_headers(url),
                 data=data,
+                allow_redirects=False,
                 **kwargs
             )
 
@@ -410,6 +427,15 @@ class SafariBooks:
 
         if update_cookies:
             self.update_cookies(response.cookies)
+
+        if update_referer:
+            # TODO Update Referer HTTP Header
+            # TODO How about Origin?
+            self.HEADERS["referer"] = response.request.url
+
+        if response.is_redirect and perfom_redirect:
+            return self.requests_provider(response.next.url, post, None, perfom_redirect, update_cookies, update_referer)
+            # TODO How about **kwargs?
 
         return response
 
@@ -428,41 +454,29 @@ class SafariBooks:
         return new_cred
 
     def do_login(self, email, password):
-        response = self.requests_provider(self.LOGIN_URL)
+        response = self.requests_provider(self.LOGIN_ENTRY_URL)
         if response == 0:
             self.display.exit("Login: unable to reach Safari Books Online. Try again...")
 
-        csrf = []
-        try:
-            csrf = html.fromstring(response.text).xpath("//input[@name='csrfmiddlewaretoken'][@value]")
+        redirect_uri = response.request.path_url[response.request.path_url.index("redirect_uri"):]  # TODO try...catch
+        redirect_uri = redirect_uri[:redirect_uri.index("&")]
+        redirect_uri = "https://api.oreilly.com%2Fapi%2Fv1%2Fauth%2Fopenid%2Fauthorize%3F" + redirect_uri
 
-        except (html.etree.ParseError, html.etree.ParserError) as parsing_error:
-            self.display.error(parsing_error)
-            self.display.exit(
-                "Login: error trying to parse the home of Safari Books Online."
-            )
-
-        if not len(csrf):
-            self.display.exit("Login: no CSRF Token found in the page."
-                              " Unable to continue the login."
-                              " Try again...")
-
-        csrf = csrf[0].attrib["value"]
         response = self.requests_provider(
             self.LOGIN_URL,
             post=True,
-            data=(
-                ("csrfmiddlewaretoken", csrf),
-                ("email", email), ("password1", password),
-                ("login", "Sign In"), ("next", "")
-            ),
-            allow_redirects=False
+            json={
+                "email": email,
+                "password": password,
+                "redirect_uri": redirect_uri
+            },
+            perfom_redirect=False
         )
 
         if response == 0:
             self.display.exit("Login: unable to perform auth to Safari Books Online.\n    Try again...")
 
-        if response.status_code != 302:
+        if response.status_code != 200:  # TODO To be reviewed
             try:
                 error_page = html.fromstring(response.text)
                 errors_message = error_page.xpath("//ul[@class='errorlist']//li/text()")
@@ -479,6 +493,11 @@ class SafariBooks:
                     "Login: your login went wrong and it encountered in an error"
                     " trying to parse the login details of Safari Books Online. Try again..."
                 )
+
+        self.jwt = response.json()  # TODO: save JWT Tokens and use the refresh_token to restore user session
+        response = self.requests_provider(self.jwt["redirect_uri"])
+        if response == 0:
+            self.display.exit("Login: unable to reach Safari Books Online. Try again...")
 
     def get_book_info(self):
         response = self.requests_provider(self.api_url)
@@ -1016,9 +1035,11 @@ if __name__ == "__main__":
         help="Book digits ID that you want to download. You can find it in the URL (X-es):"
              " `" + SAFARI_BASE_URL + "/library/view/book-name/XXXXXXXXXXXXX/`"
     )
+
     arguments.add_argument(
         "--clean", dest="clean", action='store_true', help="Clean up the downloaded contents"
     )
+
     args_parsed = arguments.parse_args()
 
     if args_parsed.cred:
@@ -1027,7 +1048,6 @@ if __name__ == "__main__":
             arguments.error("invalid credential: %s" % args_parsed.cred)
 
         args_parsed.cred = parsed_cred
-
     else:
         if args_parsed.no_cookies:
             arguments.error("invalid option: `--no-cookies` is valid only if you use the `--cred` option")
