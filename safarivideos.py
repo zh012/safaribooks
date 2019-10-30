@@ -1,5 +1,6 @@
 from urllib.parse import urlparse
 import time
+import re
 import shutil
 import os
 import sys
@@ -60,17 +61,17 @@ if __name__ == '__main__':
     import getopt
 
     def print_usage():
-        print('''safarivideos.py --login <username:password> -cookies <cookies file> --prefix <root path> <video url>''')
+        print('''safarivideos.py --login <username:password> --cookies <cookies file> --prefix <root path> <video url>''')
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'l:c:p:f:', ['login=', 'cookies=', 'prefix=', 'format=', 'dryrun'])
+        opts, args = getopt.getopt(sys.argv[1:], 'l:c:p:f:r:', ['login=', 'cookies=', 'prefix=', 'format=', 'dryrun', 'regex'])
     except getopt.GetoptError:
         print_usage()
         sys.exit(2)
 
     url = args[0]
 
-    username, password, cookies_file, prefix, fmt, dryrun = None, None, None, None, None, False
+    username, password, cookies_file, prefix, fmt, dryrun, regex = None, None, None, None, None, False, None
 
     for opt, arg in opts:
         if opt in ("-l", "--login"):
@@ -83,7 +84,9 @@ if __name__ == '__main__':
             fmt = arg.strip()
             if fmt.lower() == 'best':
                 fmt = ''
-        elif opt in ("--dryrun"):
+        elif opt in ("-r", "--regex"):
+            regex = re.compile(arg, re.IGNORECASE)
+        elif opt in ("--dryrun",):
             dryrun = True
 
     if cookies_file is None and username is None:
@@ -95,6 +98,11 @@ if __name__ == '__main__':
     toc = requests.get(url).text
 
     for folder, output, json_file, resume_cmd, download_cmd in iter_commands(toc, title_from_url(url), prefix, fmt):
+        if regex and not regex.findall(output):
+            if not dryrun:
+                print("[SKIP]: " + output)
+            continue
+
         os.makedirs(folder, exist_ok=True)
 
         if os.path.exists(output):
